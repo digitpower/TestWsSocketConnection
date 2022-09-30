@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <iostream>
 //#include <zlog.h>
 #include "Base64DecEnc.h"
 #include "globals.h"
@@ -6,6 +7,10 @@
 
 void OnErrorCallback(const WsClientLib::WSError& err, void* pUserData)
 {
+	std::cout << "OnErrorCallback: " 
+		<< "err:" << err.message
+		<< __FILE__ << __LINE__
+		<< "\n";
 	//zlog_category_t* zc = zlog_get_category("ws_socket_cat");
 	//if (zc != nullptr) {
 	//	char output[100];
@@ -111,6 +116,7 @@ void WebSocketClient::startSendData(const std::string& strWsAddress)
 #endif
 					}
 				}
+				//CLOSING, CLOSED, CONNECTING, OPEN
 				if (state == WsClientLib::WebSocket::readyStateValues::CLOSED/* 1*/)
 				{
 					//zlog_category_t* zc = zlog_get_category("ws_socket_cat");
@@ -120,6 +126,7 @@ void WebSocketClient::startSendData(const std::string& strWsAddress)
 					//	g_blockingCollectionWSocket.flush();
 					//	zlog_info(zc, output);
 					//}
+					std::cout << "Err: Trying to reconnect" << __FILE__ << __LINE__;
 					pWebsock->connect();
 				}
 			}
