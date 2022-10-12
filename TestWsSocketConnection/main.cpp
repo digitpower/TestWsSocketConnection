@@ -4,15 +4,43 @@
 #include <fstream>
 #include <filesystem>
 #include <thread>
+#include <signal.h>
+#include "include/zlog.h"
+#include "Base64DecEnc.h"
 #include "WebSocketClient.h"
 #include "globals.h"
 
 using namespace std::chrono_literals;
 
+
+void SignalHandler(int signal)
+{
+	if (signal == SIGINT) {
+		// abort signal handler code
+		std::cout << "SIGINT signal received\n";
+	}
+	else {
+		// ...
+	}
+}
+
 int main()
 {
 
-	WebSocketClient* g_wsClient = nullptr;
+	typedef void (*SignalHandlerPointer)(int);
+
+	SignalHandlerPointer previousHandler;
+	previousHandler = signal(SIGINT, SignalHandler);
+
+
+
+
+	int rc = zlog_init("log.conf");
+	if (rc) {
+		printf("init failed\n");
+		return -1;
+	}
+
 
 	using std::string;
 	using std::cout;
@@ -35,12 +63,15 @@ int main()
 		g_blockingCollectionWSocket = new code_machina::BlockingCollection<Data*>();
 
 		//Start WebSocket Thread
+
 		g_wsClient = new WebSocketClient();
-		//std::string strWebSocket = "wss://rtst.autoscript.ai/ws";
-		std::string strWebSocket = "ws://127.0.0.1:5000/ws";
+#ifdef USE_IPC
+		g_wsClient->startUdpClient();
+#else
+		std::string strWebSocket = "wss://rtst.autoscript.ai/ws";
+		//std::string strWebSocket = "ws://127.0.0.1:5000/ws";
 		g_wsClient->startSendData(strWebSocket);
-
-
+#endif
 
 		//Wait for 5 secs
 		std::this_thread::sleep_for(5000ms);
@@ -52,11 +83,11 @@ int main()
 		int counter = 0;
 
 		
-		while (!file.eof())
+		while (!file.eof() /* && counter < 30 * 5 * / /** 30 secs*/)
 		{
 			Data* dt = new Data();
 			dt->bufferLength = AUDIO_BUFFER_LENGTH;
-			//memset(dt->buffer, 0, AUDIO_BUFFER_LENGTH);
+			
 			dt->node_id = 123;
 			file.read(dt->buffer, AUDIO_BUFFER_LENGTH);
 
@@ -66,12 +97,10 @@ int main()
 			counter++;
 			std::this_thread::sleep_for(200ms);
 		}
+		int c = getchar();
 
-
+		g_wsClient->endCommunication();
 	}
-	//
-	
-	//file.read(data, audio_chunk_size);
 	file.close();
 	return 0;
 }
