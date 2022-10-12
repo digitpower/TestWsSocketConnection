@@ -24,6 +24,89 @@ void SignalHandler(int signal)
 	}
 }
 
+
+int startReceive()
+{
+    // Initialize Winsock version 2.2
+    WSADATA wsaData;
+    SOCKADDR_IN SenderAddr;
+    int SenderAddrSize = sizeof(SenderAddr);
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        printf("Server: WSAStartup failed with error: %ld\n", WSAGetLastError());
+        return -1;
+    }
+    else {
+        printf("Server: The Winsock DLL status is: %s.\n", wsaData.szSystemStatus);
+    }
+
+    SOCKET ReceivingSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (ReceivingSocket == INVALID_SOCKET) {
+        printf("Server: Error at socket(): %ld\n", WSAGetLastError());
+        WSACleanup();
+        return -1;
+    }
+    else {
+        printf("Server: socket() is OK!\n");
+    }
+
+    int Port = 8888;
+    SOCKADDR_IN ReceiverAddr;
+    ReceiverAddr.sin_family = AF_INET;
+    ReceiverAddr.sin_port = htons(Port);
+    ReceiverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(ReceivingSocket, (SOCKADDR*)&ReceiverAddr, sizeof(ReceiverAddr)) == SOCKET_ERROR)
+    {
+        printf("Server: Error! bind() failed!\n");
+        closesocket(ReceivingSocket);
+        WSACleanup();
+        return -1;
+    }
+    else {
+        printf("Server: bind() is OK!\n");
+    }
+
+    // Print some info on the receiver(Server) side...
+    //getsockname(ReceivingSocket, (SOCKADDR*)&ReceiverAddr, (int*)sizeof(ReceiverAddr));
+
+    const int BufLength = 10000;
+    char ReceiveBuf[BufLength];
+    while (1) { // Server is receiving data until you will close it.(You can replace while(1) with a condition to stop receiving.)
+        int ByteReceived = recvfrom(ReceivingSocket, ReceiveBuf, BufLength, 0, (SOCKADDR*)&SenderAddr, &SenderAddrSize);
+
+        if (ByteReceived > 0) { //If there are data
+            //printf("Total Bytes received: %d\n", ByteReceived);
+            std::string str(ReceiveBuf, ByteReceived);
+            g_blockingCollectionWSocket->add(str);
+        }
+        else if (ByteReceived <= 0) { //If the buffer is empty
+            //Print error message
+            printf("Server: Connection closed with error code: %ld\n", WSAGetLastError());
+        }
+        else { //If error
+            //Print error message
+            printf("Server: recvfrom() failed with error code: %d\n", WSAGetLastError());
+        }
+    }
+
+    getpeername(ReceivingSocket, (SOCKADDR*)&SenderAddr, &SenderAddrSize);
+
+    if (closesocket(ReceivingSocket) != 0) {
+        printf("Server: closesocket() failed! Error code: %ld\n", WSAGetLastError());
+    }
+    else {
+        printf("Server: closesocket() is OK\n");
+    }
+
+    if (WSACleanup() != 0) {
+        printf("Server: WSACleanup() failed! Error code: %ld\n", WSAGetLastError());
+    }
+    else {
+        printf("Server: WSACleanup() is OK\n");
+    }
+    return 0;
+}
+
+
 int main()
 {
 
@@ -33,8 +116,6 @@ int main()
 	previousHandler = signal(SIGINT, SignalHandler);
 
 
-
-
 	int rc = zlog_init("log.conf");
 	if (rc) {
 		printf("init failed\n");
@@ -42,65 +123,14 @@ int main()
 	}
 
 
-	using std::string;
-	using std::cout;
-	using std::endl;
-	string filename("d:\\mixdown.wav");
-	std::fstream file;
-	file.open(filename, std::ios_base::in | std::ios::binary);
-	if (!file.is_open()) {
-		//file.clear();
-		//file.open(filename, std::ios_base::out | std::ios_base::binary);
-		//file.close();
-		//file.open(filename, std::ios_base::in | std::ios_base::binary);
-		cout << "File cannot opened!" << endl;
-	}
-	else if (file.good()) {
-		cout << "file already exists." << endl;
-		cout << "file was opened on the first try!" << endl;
+    g_blockingCollectionWSocket = new code_machina::BlockingCollection<std::string>();
+    std::thread* receiverThread = new std::thread(startReceive);
+    WebSocketClient* g_wsClient = new WebSocketClient();
+    std::string strWebSocket = "wss://rtst.autoscript.ai/ws";
+    //std::string strWebSocket = "ws://127.0.0.1:5000/ws";
+    g_wsClient->startSendData(strWebSocket);
 
+    receiverThread->join();
 
-		g_blockingCollectionWSocket = new code_machina::BlockingCollection<Data*>();
-
-		//Start WebSocket Thread
-
-		g_wsClient = new WebSocketClient();
-#ifdef USE_IPC
-		g_wsClient->startUdpClient();
-#else
-		std::string strWebSocket = "wss://rtst.autoscript.ai/ws";
-		//std::string strWebSocket = "ws://127.0.0.1:5000/ws";
-		g_wsClient->startSendData(strWebSocket);
-#endif
-
-		//Wait for 5 secs
-		std::this_thread::sleep_for(5000ms);
-
-
-
-
-		//Start Reading Data From File
-		int counter = 0;
-
-		
-		while (!file.eof() /* && counter < 30 * 5 * / /** 30 secs*/)
-		{
-			Data* dt = new Data();
-			dt->bufferLength = AUDIO_BUFFER_LENGTH;
-			
-			dt->node_id = 123;
-			file.read(dt->buffer, AUDIO_BUFFER_LENGTH);
-
-
-			g_blockingCollectionWSocket->add(dt);
-			//cout << "Number of bytes read:" << audio_chunk_size << " counter: " << counter << "\n";
-			counter++;
-			std::this_thread::sleep_for(200ms);
-		}
-		int c = getchar();
-
-		g_wsClient->endCommunication();
-	}
-	file.close();
-	return 0;
+    return 0;
 }

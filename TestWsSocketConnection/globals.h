@@ -1,7 +1,5 @@
 #pragma once
 
-//#define USE_IPC
-
 #include <stdint.h>
 
 const int AUDIO_BUFFER_LENGTH = 32*200;
